@@ -1,14 +1,12 @@
-#SS_2026 - MIT License
-
 # Load assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 # ---------- Build the Form ----------
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'Server Discovery Inventory'
+$form.Text = 'WINSurvey | SS'
 $form.AutoScaleMode = 'Font'
-$form.ClientSize = New-Object System.Drawing.Size(520,420)
+$form.ClientSize = New-Object System.Drawing.Size(590,420)
 $form.StartPosition = 'CenterScreen'
 
 # Server label
@@ -25,7 +23,7 @@ $form.Controls.Add($txtServer)
 
 # File label
 $lblFile = New-Object System.Windows.Forms.Label
-$lblFile.Text = 'Import CSV or TXT (headers must be removed):'
+$lblFile.Text = 'Import CSV or TXT (without headers):'
 $lblFile.Location = New-Object System.Drawing.Point(20,55)
 $form.Controls.Add($lblFile)
 
@@ -46,6 +44,19 @@ $fileDialog = New-Object System.Windows.Forms.OpenFileDialog
 $fileDialog.Filter = 'CSV files (*.csv)|*.csv|Text files (*.txt)|*.txt'
 $fileDialog.Multiselect = $false
 
+
+
+$chkOS.AutoSize      = $true
+$chkSQL.AutoSize     = $true
+$chkIIS.AutoSize     = $true
+$chkUsers.AutoSize   = $true
+$chkTasks.AutoSize   = $true
+$chkPing.AutoSize    = $true
+$chkPorts.AutoSize   = $true
+
+
+
+
 $btnBrowse.Add_Click({
     if ($fileDialog.ShowDialog() -eq 'OK') {
         $txtFile.Text = $fileDialog.FileName
@@ -59,76 +70,82 @@ $chkCsv.AutoSize = $true
 $chkCsv.Location = New-Object System.Drawing.Point(180,90)
 $form.Controls.Add($chkCsv)
 
-# ---------- Datapoint Selection ----------
+# ---------- Datapoint Selection (FlowLayoutPanel + Option A width) ----------
+
+$form.AutoScroll = $true
+
 $grpData = New-Object System.Windows.Forms.GroupBox
 $grpData.Text = 'Datapoints to query'
 $grpData.Location = New-Object System.Drawing.Point(20,130)
-$grpData.Size = New-Object System.Drawing.Size(480,120)
+$grpData.Size = New-Object System.Drawing.Size(480,200)
 $form.Controls.Add($grpData)
 
-$chkOS = New-Object System.Windows.Forms.CheckBox
-$chkOS.Text = 'OS Version'
-$chkOS.Checked = $true
-$chkOS.Location = New-Object System.Drawing.Point(15,25)
-$grpData.Controls.Add($chkOS)
+# Flow layout panel for clean stacking
+$flow = New-Object System.Windows.Forms.FlowLayoutPanel
+$flow.Parent = $grpData
+$flow.Location = New-Object System.Drawing.Point(10,20)
+$flow.Size = New-Object System.Drawing.Size(460,170)
+$flow.FlowDirection = 'TopDown'
+$flow.WrapContents = $false
+$flow.AutoScroll = $true
+$grpData.Controls.Add($flow)
 
-$chkSQL = New-Object System.Windows.Forms.CheckBox
-$chkSQL.Text = 'SQL Installed / Instances'
-$chkSQL.Checked = $true
-$chkSQL.Location = New-Object System.Drawing.Point(150,25)
-$grpData.Controls.Add($chkSQL)
+# Helper function to create checkboxes consistently
+function New-DataCheckbox {
+    param (
+        [string]$Text
+    )
 
-$chkIIS = New-Object System.Windows.Forms.CheckBox
-$chkIIS.Text = 'IIS Installed / Sites'
-$chkIIS.Checked = $true
-$chkIIS.Location = New-Object System.Drawing.Point(320,25)
-$grpData.Controls.Add($chkIIS)
+    $cb = New-Object System.Windows.Forms.CheckBox
+    $cb.Text = $Text
+    $cb.Checked = $true
+    $cb.AutoSize = $true
+    $cb.Width = 440
+    return $cb
+}
 
-$chkUsers = New-Object System.Windows.Forms.CheckBox
-$chkUsers.Text = 'User Folders'
-$chkUsers.Checked = $true
-$chkUsers.Location = New-Object System.Drawing.Point(15,55)
-$grpData.Controls.Add($chkUsers)
+$chkOS    = New-DataCheckbox 'OS Version'
+$chkSQL   = New-DataCheckbox 'SQL Installed / Instances'
+$chkIIS   = New-DataCheckbox 'IIS Installed / Sites'
+$chkUsers = New-DataCheckbox 'User Folders'
+$chkTasks = New-DataCheckbox 'Scheduled Tasks'
+$chkPing  = New-DataCheckbox 'ICMP Ping'
+$chkPorts = New-DataCheckbox 'Open Web Ports (80,443,8443,8080,8000,25)'
 
-$chkTasks = New-Object System.Windows.Forms.CheckBox
-$chkTasks.Text = 'Scheduled Tasks'
-$chkTasks.Checked = $true
-$chkTasks.Location = New-Object System.Drawing.Point(150,55)
-$grpData.Controls.Add($chkTasks)
-
-$chkPing = New-Object System.Windows.Forms.CheckBox
-$chkPing.Text = 'ICMP Ping'
-$chkPing.Checked = $true
-$chkPing.Location = New-Object System.Drawing.Point(320,55)
-$grpData.Controls.Add($chkPing)
-
-$chkPorts = New-Object System.Windows.Forms.CheckBox
-$chkPorts.Text = 'Open Web Ports (80,443,8443,8080,8000,25)'
-$chkPorts.Checked = $true
-$chkPorts.Location = New-Object System.Drawing.Point(15,85)
-$grpData.Controls.Add($chkPorts)
+$flow.Controls.AddRange(@(
+    $chkOS,
+    $chkSQL,
+    $chkIIS,
+    $chkUsers,
+    $chkTasks,
+    $chkPing,
+    $chkPorts
+))
 
 # OK / Cancel buttons
 $btnOK = New-Object System.Windows.Forms.Button
 $btnOK.Text = 'OK'
-$btnOK.Location = New-Object System.Drawing.Point(180,280)
+$btnOK.Location = New-Object System.Drawing.Point(180,350)
 $btnOK.Add_Click({ $form.Tag = 'OK'; $form.Close() })
 $form.Controls.Add($btnOK)
 
 $btnCancel = New-Object System.Windows.Forms.Button
 $btnCancel.Text = 'Cancel'
-$btnCancel.Location = New-Object System.Drawing.Point(275,280)
+$btnCancel.Location = New-Object System.Drawing.Point(275,350)
 $btnCancel.Add_Click({ $form.Tag = 'Cancel'; $form.Close() })
 $form.Controls.Add($btnCancel)
 
 $form.ShowDialog() | Out-Null
 
+
 # ---------- Input Validation ----------
 if ($form.Tag -ne 'OK' -or
-    (:IsNullOrWhiteSpace($txtServer.Text) -and
-     :IsNullOrWhiteSpace($txtFile.Text))) {
+    ([string]::IsNullOrWhiteSpace($txtServer.Text) -and
+     [string]::IsNullOrWhiteSpace($txtFile.Text)))
+{
     return
 }
+
 
 $ExportCsv = $chkCsv.Checked
 $DoOS      = $chkOS.Checked
