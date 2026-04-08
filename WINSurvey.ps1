@@ -179,7 +179,39 @@ Write-Host "Starting server inventory for $TotalServers server(s)..."
 $AllResults = foreach ($Server in $Servers) {
     $Current++
     Write-Host "[$Current/$TotalServers] Querying $Server..."
+if ($DoPing) {
 
+    $ping = Test-Connection -ComputerName $Server -Count 1 -ErrorAction SilentlyContinue
+
+    if ($ping) {
+        $ttl = $ping.TimeToLive
+
+        if ($ttl -ge 120) {
+            $osGuess = 'Windows'
+        }
+        elseif ($ttl -ge 60) {
+            $osGuess = 'Linux/Unix'
+        }
+        else {
+            $osGuess = 'Unknown'
+        }
+
+        $AllResults += [pscustomobject]@{
+            ComputerName = $Server
+            DataCategory = 'Network'
+            Name         = 'ICMP Ping'
+            Value        = "Online | TTL=$ttl | OS Guess=$osGuess"
+        }
+    }
+    else {
+        $AllResults += [pscustomobject]@{
+            ComputerName = $Server
+            DataCategory = 'Network'
+            Name         = 'ICMP Ping'
+            Value        = 'No response'
+        }
+    }
+}
     try {
         Invoke-Command -ComputerName $Server -ErrorAction Stop -ScriptBlock {
 
