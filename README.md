@@ -14,4 +14,4 @@ Scans defined any windows devices specified in the host field, .txt file or .CSV
 - SQL installed? + instance Name(s)
 
 -Runs best in ISE or VScode
--Winrm required for datapoint polling. 
+-Winrm required for non-ICMP datapoint polling. 
