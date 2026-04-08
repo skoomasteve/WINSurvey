@@ -142,31 +142,60 @@ $Current = 0
 Write-Host "Starting server inventory for $TotalServers server(s)..."
 
 # ---------- Query Servers ----------
+# ---------- Query Servers ----------
 $AllResults = foreach ($Server in $Servers) {
 
     $Current++
     Write-Host "[$Current/$TotalServers] Querying $Server..."
+
+    # --- Initialize per-host summary tracking ---
+    $PingStatus     = 'Unknown'
+    $TTLValue       = ''
+    $OSHeuristic    = 'Unknown'
+    $OpenPortCount  = 0
+    $WinRMStatus    = 'NotAttempted'
 
     # --- ICMP Ping (LOCAL) ---
     if ($DoPing) {
         $ping = Test-Connection -ComputerName $Server -Count 1 -ErrorAction SilentlyContinue
         if ($ping) {
             $ttl = $ping.TimeToLive
-            if ($ttl -ge 65) {
-    $osGuess = 'Windows-like (TTL heuristic)'
-}
-elseif ($ttl -ge 50) {
-    $osGuess = 'Linux/Unix-like (TTL heuristic)'
-}
-else {
-    $osGuess = 'Unknown / Network device'
-}
 
+            if ($ttl -ge 65) {
+                $osGuess = 'Windows-like (TTL heuristic)'
+            }
+            elseif ($ttl -ge 50) {
+                $osGuess = 'Linux/Unix-like (TTL heuristic)'
+            }
+            else {
+                $osGuess = 'Unknown / Network device'
+            }
+
+            $PingStatus  = 'Online'
+            $TTLValue    = $ttl
+            $OSHeuristic = $osGuess
+        }
+        else {
+            $PingStatus = 'No response'
+        }
+    }
+
+    # --- SUMMARY ROW (ALWAYS FIRST FOR THIS HOST) ---
+    [pscustomobject]@{
+        ComputerName = $Server
+        DataCategory = 'Summary'
+        Name         = '=== HOST SUMMARY ==='
+        Value        = "████ $Server ████ | Ping=$PingStatus | TTL=$TTLValue | OS=$OSHeuristic | PortsOpen=$OpenPortCount | WinRM=$WinRMStatus"
+    }
+
+    # --- Network detail row (ICMP) ---
+    if ($DoPing) {
+        if ($PingStatus -eq 'Online') {
             [pscustomobject]@{
                 ComputerName = $Server
                 DataCategory = 'Network'
                 Name         = 'ICMP Ping'
-                Value        = "Online | TTL=$ttl | OS Guess=$osGuess"
+                Value        = "Online | TTL=$TTLValue | OS Guess=$OSHeuristic"
             }
         }
         else {
@@ -179,130 +208,134 @@ else {
         }
     }
 
-try {
-    Invoke-Command -ComputerName $Server -ErrorAction Stop -ScriptBlock {
+    try {
+        Invoke-Command -ComputerName $Server -ErrorAction Stop -ScriptBlock {
 
-        $Rows = @()
-        $Computer = $env:COMPUTERNAME
+            $Rows = @()
+            $Computer = $env:COMPUTERNAME
 
-        # ---------- OS ----------
-        if ($using:chkOS.Checked) {
-            $OS = Get-CimInstance Win32_OperatingSystem
-            $Rows += [pscustomobject]@{
-                ComputerName = $Computer
-                DataCategory = 'OS'
-                Name         = 'Version'
-                Value        = $OS.Caption
-            }
-        }
-
-        # ---------- SQL ----------
-        if ($using:chkSQL.Checked) {
-            $SqlServices = Get-Service |
-                Where-Object { $_.Name -like 'MSSQL*' -and $_.Name -ne 'MSSQLFDLauncher' }
-
-            $Rows += [pscustomobject]@{
-                ComputerName = $Computer
-                DataCategory = 'SQL'
-                Name         = 'Installed'
-                Value        = if ($SqlServices) { 'Yes' } else { 'No' }
-            }
-
-            foreach ($Svc in $SqlServices) {
-                $Instance = if ($Svc.Name -eq 'MSSQLSERVER') {
-                    'MSSQLSERVER (Default)'
-                } else {
-                    $Svc.Name -replace '^MSSQL\$', ''
+            # ---------- OS ----------
+            if ($using:chkOS.Checked) {
+                $OS = Get-CimInstance Win32_OperatingSystem
+                $Rows += [pscustomobject]@{
+                    ComputerName = $Computer
+                    DataCategory = 'OS'
+                    Name         = 'Version'
+                    Value        = $OS.Caption
                 }
+            }
+
+            # ---------- SQL ----------
+            if ($using:chkSQL.Checked) {
+                $SqlServices = Get-Service |
+                    Where-Object { $_.Name -like 'MSSQL*' -and $_.Name -ne 'MSSQLFDLauncher' }
 
                 $Rows += [pscustomobject]@{
                     ComputerName = $Computer
                     DataCategory = 'SQL'
-                    Name         = 'Instance'
-                    Value        = $Instance
+                    Name         = 'Installed'
+                    Value        = if ($SqlServices) { 'Yes' } else { 'No' }
                 }
-            }
-        }
 
-        # ---------- IIS ----------
-        if ($using:chkIIS.Checked) {
-            $IIS = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
-            $Installed = $IIS -and $IIS.InstallState -eq 'Installed'
+                foreach ($Svc in $SqlServices) {
+                    $Instance = if ($Svc.Name -eq 'MSSQLSERVER') {
+                        'MSSQLSERVER (Default)'
+                    } else {
+                        $Svc.Name -replace '^MSSQL\$', ''
+                    }
 
-            $Rows += [pscustomobject]@{
-                ComputerName = $Computer
-                DataCategory = 'IIS'
-                Name         = 'Installed'
-                Value        = if ($Installed) { 'Yes' } else { 'No' }
-            }
-
-            if ($Installed) {
-                Import-Module WebAdministration
-                foreach ($Site in Get-Website) {
                     $Rows += [pscustomobject]@{
                         ComputerName = $Computer
-                        DataCategory = 'IIS'
-                        Name         = 'Site'
-                        Value        = $Site.Name
+                        DataCategory = 'SQL'
+                        Name         = 'Instance'
+                        Value        = $Instance
                     }
                 }
             }
-        }
 
-        # ---------- User Profiles ----------
-        if ($using:chkUsers.Checked) {
-            Get-ChildItem C:\Users -Directory |
-                Where-Object { $_.Name -notin 'Public','Default','Default User','All Users','Administrator' } |
-                ForEach-Object {
-                    $Rows += [pscustomobject]@{
-                        ComputerName = $Computer
-                        DataCategory = 'UserFolders'
-                        Name         = 'Folder'
-                        Value        = $_.Name
-                    }
-                }
-        }
+            # ---------- IIS ----------
+            if ($using:chkIIS.Checked) {
+                $IIS = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
+                $Installed = $IIS -and $IIS.InstallState -eq 'Installed'
 
-        # ---------- Scheduled Tasks ----------
-        if ($using:chkTasks.Checked) {
-            Get-ScheduledTask |
-                Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.Principal.UserId } |
-                ForEach-Object {
-                    $Rows += [pscustomobject]@{
-                        ComputerName = $Computer
-                        DataCategory = 'ScheduledTask'
-                        Name         = $_.TaskName
-                        Value        = $_.Principal.UserId
-                    }
-                }
-        }
-
-        # ---------- Network Ports ----------
-        if ($using:DoPorts) {
-            foreach ($port in 80,443,8443,8080,8000,25) {
-                $open = Test-NetConnection -ComputerName $Computer -Port $port -InformationLevel Quiet
                 $Rows += [pscustomobject]@{
                     ComputerName = $Computer
-                    DataCategory = 'Network'
-                    Name         = "Port $port"
-                    Value        = if ($open) { 'Open' } else { 'Closed' }
+                    DataCategory = 'IIS'
+                    Name         = 'Installed'
+                    Value        = if ($Installed) { 'Yes' } else { 'No' }
+                }
+
+                if ($Installed) {
+                    Import-Module WebAdministration
+                    foreach ($Site in Get-Website) {
+                        $Rows += [pscustomobject]@{
+                            ComputerName = $Computer
+                            DataCategory = 'IIS'
+                            Name         = 'Site'
+                            Value        = $Site.Name
+                        }
+                    }
                 }
             }
+
+            # ---------- User Profiles ----------
+            if ($using:chkUsers.Checked) {
+                Get-ChildItem C:\Users -Directory |
+                    Where-Object { $_.Name -notin 'Public','Default','Default User','All Users','Administrator' } |
+                    ForEach-Object {
+                        $Rows += [pscustomobject]@{
+                            ComputerName = $Computer
+                            DataCategory = 'UserFolders'
+                            Name         = 'Folder'
+                            Value        = $_.Name
+                        }
+                    }
+            }
+
+            # ---------- Scheduled Tasks ----------
+            if ($using:chkTasks.Checked) {
+                Get-ScheduledTask |
+                    Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.Principal.UserId } |
+                    ForEach-Object {
+                        $Rows += [pscustomobject]@{
+                            ComputerName = $Computer
+                            DataCategory = 'ScheduledTask'
+                            Name         = $_.TaskName
+                            Value        = $_.Principal.UserId
+                        }
+                    }
+            }
+
+            # ---------- Network Ports ----------
+            if ($using:DoPorts) {
+                foreach ($port in 80,443,8443,8080,8000,25) {
+                    $open = Test-NetConnection -ComputerName $Computer -Port $port -InformationLevel Quiet
+                    if ($open) { $using:OpenPortCount++ }
+
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'Network'
+                        Name         = "Port $port"
+                        Value        = if ($open) { 'Open' } else { 'Closed' }
+                    }
+                }
+            }
+
+            return $Rows
         }
 
-        return $Rows
+        $WinRMStatus = 'Success'
+    }
+    catch {
+        $WinRMStatus = 'Failed'
+        [pscustomobject]@{
+            ComputerName = $Server
+            DataCategory = 'ERROR'
+            Name         = 'QueryFailed'
+            Value        = $_.Exception.Message
+        }
     }
 }
-catch {
-    [pscustomobject]@{
-        ComputerName = $Server
-        DataCategory = 'ERROR'
-        Name         = 'QueryFailed'
-        Value        = $_.Exception.Message
-    }
-}
-    }
-
 
 # ---------- Optional CSV Export ----------
 if ($ExportCsv -and $AllResults) {
