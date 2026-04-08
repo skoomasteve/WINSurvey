@@ -8,6 +8,7 @@ $form.Text = 'WINSurvey | SS'
 $form.AutoScaleMode = 'Font'
 $form.ClientSize = New-Object System.Drawing.Size(590,420)
 $form.StartPosition = 'CenterScreen'
+$form.AutoScroll = $true
 
 # Server label
 $lblServer = New-Object System.Windows.Forms.Label
@@ -44,9 +45,6 @@ $fileDialog = New-Object System.Windows.Forms.OpenFileDialog
 $fileDialog.Filter = 'CSV files (*.csv)|*.csv|Text files (*.txt)|*.txt'
 $fileDialog.Multiselect = $false
 
-
-
-
 $btnBrowse.Add_Click({
     if ($fileDialog.ShowDialog() -eq 'OK') {
         $txtFile.Text = $fileDialog.FileName
@@ -60,17 +58,13 @@ $chkCsv.AutoSize = $true
 $chkCsv.Location = New-Object System.Drawing.Point(180,90)
 $form.Controls.Add($chkCsv)
 
-# ---------- Datapoint Selection (FlowLayoutPanel + Option A width) ----------
-
-$form.AutoScroll = $true
-
+# ---------- Datapoint Selection ----------
 $grpData = New-Object System.Windows.Forms.GroupBox
 $grpData.Text = 'Datapoints to query'
 $grpData.Location = New-Object System.Drawing.Point(20,130)
 $grpData.Size = New-Object System.Drawing.Size(480,200)
 $form.Controls.Add($grpData)
 
-# Flow layout panel for clean stacking
 $flow = New-Object System.Windows.Forms.FlowLayoutPanel
 $flow.Parent = $grpData
 $flow.Location = New-Object System.Drawing.Point(10,20)
@@ -80,12 +74,8 @@ $flow.WrapContents = $false
 $flow.AutoScroll = $true
 $grpData.Controls.Add($flow)
 
-# Helper function to create checkboxes consistently
 function New-DataCheckbox {
-    param (
-        [string]$Text
-    )
-
+    param ([string]$Text)
     $cb = New-Object System.Windows.Forms.CheckBox
     $cb.Text = $Text
     $cb.Checked = $true
@@ -103,13 +93,7 @@ $chkPing  = New-DataCheckbox 'ICMP Ping'
 $chkPorts = New-DataCheckbox 'Open Web Ports (80,443,8443,8080,8000,25)'
 
 $flow.Controls.AddRange(@(
-    $chkOS,
-    $chkSQL,
-    $chkIIS,
-    $chkUsers,
-    $chkTasks,
-    $chkPing,
-    $chkPorts
+    $chkOS,$chkSQL,$chkIIS,$chkUsers,$chkTasks,$chkPing,$chkPorts
 ))
 
 # OK / Cancel buttons
@@ -127,34 +111,25 @@ $form.Controls.Add($btnCancel)
 
 $form.ShowDialog() | Out-Null
 
-
 # ---------- Input Validation ----------
 if ($form.Tag -ne 'OK' -or
     ([string]::IsNullOrWhiteSpace($txtServer.Text) -and
-     [string]::IsNullOrWhiteSpace($txtFile.Text)))
-{
+     [string]::IsNullOrWhiteSpace($txtFile.Text))) {
     return
 }
 
-
 $ExportCsv = $chkCsv.Checked
-$DoOS      = $chkOS.Checked
-$DoSQL     = $chkSQL.Checked
-$DoIIS     = $chkIIS.Checked
-$DoUsers   = $chkUsers.Checked
-$DoTasks   = $chkTasks.Checked
 $DoPing    = $chkPing.Checked
 $DoPorts   = $chkPorts.Checked
 
 $Servers = @()
-
-# ---------- Collect Hostnames ----------
 if ($txtServer.Text) { $Servers += $txtServer.Text.Trim() }
 
 if ($txtFile.Text) {
     if ($txtFile.Text.ToLower().EndsWith('.txt')) {
         $Servers += Get-Content $txtFile.Text
-    } else {
+    }
+    else {
         $Servers += Import-Csv -Path $txtFile.Text -Header 'Host' |
             Select-Object -ExpandProperty Host
     }
@@ -163,93 +138,178 @@ if ($txtFile.Text) {
 $Servers = $Servers | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique
 $TotalServers = $Servers.Count
 $Current = 0
+
 Write-Host "Starting server inventory for $TotalServers server(s)..."
 
 # ---------- Query Servers ----------
 $AllResults = foreach ($Server in $Servers) {
+
     $Current++
     Write-Host "[$Current/$TotalServers] Querying $Server..."
-if ($DoPing) {
 
-    $ping = Test-Connection -ComputerName $Server -Count 1 -ErrorAction SilentlyContinue
+    # --- ICMP Ping (LOCAL) ---
+    if ($DoPing) {
+        $ping = Test-Connection -ComputerName $Server -Count 1 -ErrorAction SilentlyContinue
+        if ($ping) {
+            $ttl = $ping.TimeToLive
+            if ($ttl -ge 65) {
+    $osGuess = 'Windows-like (TTL heuristic)'
+}
+elseif ($ttl -ge 50) {
+    $osGuess = 'Linux/Unix-like (TTL heuristic)'
+}
+else {
+    $osGuess = 'Unknown / Network device'
+}
 
-    if ($ping) {
-        $ttl = $ping.TimeToLive
-
-        if ($ttl -ge 120) {
-            $osGuess = 'Windows'
-        }
-        elseif ($ttl -ge 60) {
-            $osGuess = 'Linux/Unix'
+            [pscustomobject]@{
+                ComputerName = $Server
+                DataCategory = 'Network'
+                Name         = 'ICMP Ping'
+                Value        = "Online | TTL=$ttl | OS Guess=$osGuess"
+            }
         }
         else {
-            $osGuess = 'Unknown'
+            [pscustomobject]@{
+                ComputerName = $Server
+                DataCategory = 'Network'
+                Name         = 'ICMP Ping'
+                Value        = 'No response'
+            }
+        }
+    }
+
+try {
+    Invoke-Command -ComputerName $Server -ErrorAction Stop -ScriptBlock {
+
+        $Rows = @()
+        $Computer = $env:COMPUTERNAME
+
+        # ---------- OS ----------
+        if ($using:chkOS.Checked) {
+            $OS = Get-CimInstance Win32_OperatingSystem
+            $Rows += [pscustomobject]@{
+                ComputerName = $Computer
+                DataCategory = 'OS'
+                Name         = 'Version'
+                Value        = $OS.Caption
+            }
         }
 
-     
-[pscustomobject]@{
-    ComputerName = $Server
-    DataCategory = 'Network'
-    Name         = 'ICMP Ping'
-    Value        = "Online | TTL=$ttl | OS Guess=$osGuess"
-}
+        # ---------- SQL ----------
+        if ($using:chkSQL.Checked) {
+            $SqlServices = Get-Service |
+                Where-Object { $_.Name -like 'MSSQL*' -and $_.Name -ne 'MSSQLFDLauncher' }
 
-    }
-[pscustomobject]@{
-    ComputerName = $Server
-    DataCategory = 'Network'
-    Name         = 'ICMP Ping'
-    Value        = 'No response'
-}
-    }
-}
-    try {
-        Invoke-Command -ComputerName $Server -ErrorAction Stop -ScriptBlock {
+            $Rows += [pscustomobject]@{
+                ComputerName = $Computer
+                DataCategory = 'SQL'
+                Name         = 'Installed'
+                Value        = if ($SqlServices) { 'Yes' } else { 'No' }
+            }
 
-            $Rows = @()
-            $Computer = $env:COMPUTERNAME
-
-            if ($using:DoPing) {
-                $ping = Test-Connection -ComputerName $Computer -Count 1 -ErrorAction SilentlyContinue
-                if ($ping) {
-                    $Rows += [pscustomobject]@{
-                        ComputerName=$Computer; DataCategory='Network'
-                        Name='ICMP Ping'; Value="Online (TTL=$($ping.TimeToLive))"
-                    }
+            foreach ($Svc in $SqlServices) {
+                $Instance = if ($Svc.Name -eq 'MSSQLSERVER') {
+                    'MSSQLSERVER (Default)'
                 } else {
+                    $Svc.Name -replace '^MSSQL\$', ''
+                }
+
+                $Rows += [pscustomobject]@{
+                    ComputerName = $Computer
+                    DataCategory = 'SQL'
+                    Name         = 'Instance'
+                    Value        = $Instance
+                }
+            }
+        }
+
+        # ---------- IIS ----------
+        if ($using:chkIIS.Checked) {
+            $IIS = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
+            $Installed = $IIS -and $IIS.InstallState -eq 'Installed'
+
+            $Rows += [pscustomobject]@{
+                ComputerName = $Computer
+                DataCategory = 'IIS'
+                Name         = 'Installed'
+                Value        = if ($Installed) { 'Yes' } else { 'No' }
+            }
+
+            if ($Installed) {
+                Import-Module WebAdministration
+                foreach ($Site in Get-Website) {
                     $Rows += [pscustomobject]@{
-                        ComputerName=$Computer; DataCategory='Network'
-                        Name='ICMP Ping'; Value='No response'
+                        ComputerName = $Computer
+                        DataCategory = 'IIS'
+                        Name         = 'Site'
+                        Value        = $Site.Name
                     }
                 }
             }
+        }
 
-            if ($using:DoPorts) {
-                foreach ($port in 80,443,8443,8080,8000,25) {
-                    $open = Test-NetConnection -ComputerName $Computer -Port $port -InformationLevel Quiet
+        # ---------- User Profiles ----------
+        if ($using:chkUsers.Checked) {
+            Get-ChildItem C:\Users -Directory |
+                Where-Object { $_.Name -notin 'Public','Default','Default User','All Users','Administrator' } |
+                ForEach-Object {
                     $Rows += [pscustomobject]@{
-                        ComputerName=$Computer; DataCategory='Network'
-                        Name="Port $port"
-                        Value= if ($open) {'Open'} else {'Closed'}
+                        ComputerName = $Computer
+                        DataCategory = 'UserFolders'
+                        Name         = 'Folder'
+                        Value        = $_.Name
                     }
                 }
-            }
+        }
 
-            return $Rows
+        # ---------- Scheduled Tasks ----------
+        if ($using:chkTasks.Checked) {
+            Get-ScheduledTask |
+                Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.Principal.UserId } |
+                ForEach-Object {
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'ScheduledTask'
+                        Name         = $_.TaskName
+                        Value        = $_.Principal.UserId
+                    }
+                }
         }
-    }
-    catch {
-        [pscustomobject]@{
-            ComputerName=$Server; DataCategory='ERROR'
-            Name='QueryFailed'; Value=$_.Exception.Message
+
+        # ---------- Network Ports ----------
+        if ($using:DoPorts) {
+            foreach ($port in 80,443,8443,8080,8000,25) {
+                $open = Test-NetConnection -ComputerName $Computer -Port $port -InformationLevel Quiet
+                $Rows += [pscustomobject]@{
+                    ComputerName = $Computer
+                    DataCategory = 'Network'
+                    Name         = "Port $port"
+                    Value        = if ($open) { 'Open' } else { 'Closed' }
+                }
+            }
         }
+
+        return $Rows
     }
 }
+catch {
+    [pscustomobject]@{
+        ComputerName = $Server
+        DataCategory = 'ERROR'
+        Name         = 'QueryFailed'
+        Value        = $_.Exception.Message
+    }
+}
+    }
+
 
 # ---------- Optional CSV Export ----------
 if ($ExportCsv -and $AllResults) {
-    $Desktop = :GetFolderPath('Desktop')
-    $AllResults | Export-Csv (Join-Path $Desktop "ServerInventory_$(Get-Date -Format yyyyMMdd_HHmmss).csv") -NoTypeInformation
+    $Desktop = [Environment]::GetFolderPath('Desktop')
+    $AllResults | Export-Csv (
+        Join-Path $Desktop "ServerInventory_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
+    ) -NoTypeInformation
 }
 
 # ---------- Output ----------
