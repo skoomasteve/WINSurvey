@@ -46,16 +46,6 @@ $fileDialog.Multiselect = $false
 
 
 
-$chkOS.AutoSize      = $true
-$chkSQL.AutoSize     = $true
-$chkIIS.AutoSize     = $true
-$chkUsers.AutoSize   = $true
-$chkTasks.AutoSize   = $true
-$chkPing.AutoSize    = $true
-$chkPorts.AutoSize   = $true
-
-
-
 
 $btnBrowse.Add_Click({
     if ($fileDialog.ShowDialog() -eq 'OK') {
@@ -196,20 +186,21 @@ if ($DoPing) {
             $osGuess = 'Unknown'
         }
 
-        $AllResults += [pscustomobject]@{
-            ComputerName = $Server
-            DataCategory = 'Network'
-            Name         = 'ICMP Ping'
-            Value        = "Online | TTL=$ttl | OS Guess=$osGuess"
-        }
+     
+[pscustomobject]@{
+    ComputerName = $Server
+    DataCategory = 'Network'
+    Name         = 'ICMP Ping'
+    Value        = "Online | TTL=$ttl | OS Guess=$osGuess"
+}
+
     }
-    else {
-        $AllResults += [pscustomobject]@{
-            ComputerName = $Server
-            DataCategory = 'Network'
-            Name         = 'ICMP Ping'
-            Value        = 'No response'
-        }
+[pscustomobject]@{
+    ComputerName = $Server
+    DataCategory = 'Network'
+    Name         = 'ICMP Ping'
+    Value        = 'No response'
+}
     }
 }
     try {
