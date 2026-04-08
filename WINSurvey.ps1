@@ -180,12 +180,12 @@ $AllResults = foreach ($Server in $Servers) {
         }
     }
 
-    # --- SUMMARY ROW (ALWAYS FIRST FOR THIS HOST) ---
+    # --- SUMMARY ROW (EMITTED FIRST, PLACEHOLDER COUNTS) ---
     [pscustomobject]@{
         ComputerName = $Server
         DataCategory = 'Summary'
         Name         = '=== HOST SUMMARY ==='
-        Value        = "████ $Server ████ | Ping=$PingStatus | TTL=$TTLValue | OS=$OSHeuristic | PortsOpen=$OpenPortCount | WinRM=$WinRMStatus"
+        Value        = "████ $Server ████ | Ping=$PingStatus | TTL=$TTLValue | OS=$OSHeuristic | PortsOpen=pending | WinRM=pending"
     }
 
     # --- Network detail row (ICMP) ---
@@ -209,9 +209,11 @@ $AllResults = foreach ($Server in $Servers) {
     }
 
     try {
-        Invoke-Command -ComputerName $Server -ErrorAction Stop -ScriptBlock {
+        # --- Run all WinRM-based inventory and network port checks ---
+        $Result = Invoke-Command -ComputerName $Server -ErrorAction Stop -ScriptBlock {
 
             $Rows = @()
+            $LocalOpenPortCount = 0
             $Computer = $env:COMPUTERNAME
 
             # ---------- OS ----------
@@ -310,7 +312,7 @@ $AllResults = foreach ($Server in $Servers) {
             if ($using:DoPorts) {
                 foreach ($port in 80,443,8443,8080,8000,25) {
                     $open = Test-NetConnection -ComputerName $Computer -Port $port -InformationLevel Quiet
-                    if ($open) { $using:OpenPortCount++ }
+                    if ($open) { $LocalOpenPortCount++ }
 
                     $Rows += [pscustomobject]@{
                         ComputerName = $Computer
@@ -321,10 +323,15 @@ $AllResults = foreach ($Server in $Servers) {
                 }
             }
 
-            return $Rows
+            return [pscustomobject]@{
+                Rows          = $Rows
+                OpenPortCount = $LocalOpenPortCount
+            }
         }
 
-        $WinRMStatus = 'Success'
+        $WinRMStatus   = 'Success'
+        $OpenPortCount = $Result.OpenPortCount
+        $Result.Rows
     }
     catch {
         $WinRMStatus = 'Failed'
@@ -334,6 +341,14 @@ $AllResults = foreach ($Server in $Servers) {
             Name         = 'QueryFailed'
             Value        = $_.Exception.Message
         }
+    }
+
+    # --- FINAL SUMMARY ROW (CORRECT COUNTS, EMITTED LAST) ---
+    [pscustomobject]@{
+        ComputerName = $Server
+        DataCategory = 'Summary'
+        Name         = '=== HOST SUMMARY (FINAL) ==='
+        Value        = "████ $Server ████ | Ping=$PingStatus | TTL=$TTLValue | OS=$OSHeuristic | PortsOpen=$OpenPortCount | WinRM=$WinRMStatus"
     }
 }
 
