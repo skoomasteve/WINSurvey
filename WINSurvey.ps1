@@ -1,5 +1,3 @@
-# SS-2026  |  MIT License
-
 # Load assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -217,28 +215,31 @@ $AllResults = foreach ($Server in $Servers) {
     # -------------------------
     # Per-host summary state
     # -------------------------
-    $PingStatus        = 'Unknown'
-    $OnlineState       = 'Unknown'
-    $TTLValue          = ''
-    $OSHeuristic       = 'Unknown'
-    $OpenPortCount     = 'Not Scanned'
-    $WinRMStatus       = 'NotAttempted'
-    $IISSummaryState   = 'N/A'
-    $SQLSummaryState   = 'N/A'
-    $LastLoggedUser    = 'Unknown'
+    $PingStatus            = 'Unknown'
+    $OnlineState           = 'Unknown'
+    $TTLValue              = ''
+    $OSHeuristic           = 'Unknown'
+    $OpenPortCount         = 'Not Scanned'
+    $WinRMStatus           = 'NotAttempted'
+    $IISSummaryState       = 'N/A'
+    $SQLSummaryState       = 'N/A'
+    $LastLoggedUser        = 'Unknown'
+    $LastBootTime          = 'Unknown'
+    $LastInteractiveLogon  = 'Unknown'
+    $LastInteractiveUser   = 'Unknown'
 
     # -------------------------
     # BEGIN HOST — Scan Intent
     # -------------------------
     $ScanItems = @()
-    if ($DoPing)         { $ScanItems += 'Ping' }
-    if ($chkOS.Checked)  { $ScanItems += 'OS' }
-    if ($chkSQL.Checked) { $ScanItems += 'SQL' }
-    if ($chkIIS.Checked) { $ScanItems += 'IIS' }
+    if ($DoPing)           { $ScanItems += 'Ping' }
+    if ($chkOS.Checked)    { $ScanItems += 'OS' }
+    if ($chkSQL.Checked)   { $ScanItems += 'SQL' }
+    if ($chkIIS.Checked)   { $ScanItems += 'IIS' }
     if ($chkUsers.Checked) { $ScanItems += 'UserFolders' }
     if ($chkTasks.Checked) { $ScanItems += 'ScheduledTasks' }
-    if ($DoUsersGroups)  { $ScanItems += 'UsersAndGroups' }
-    if ($DoPorts)        { $ScanItems += 'Ports' }
+    if ($DoUsersGroups)    { $ScanItems += 'UsersAndGroups' }
+    if ($DoPorts)          { $ScanItems += 'Ports' }
 
     [pscustomobject]@{
         ComputerName = "┌$Server | Preliminary Scan Summary ┐"
@@ -281,273 +282,367 @@ $AllResults = foreach ($Server in $Servers) {
             }
         }
     }
-# -------------------------
-# External Port Scan (LOCAL, fast with status + console output)
-# -------------------------
-if ($DoPorts) {
 
-    $PortsToScan   = @(80,443,8443,8080,8000,25)
-    $PortTimeoutMs = 500
-    $OpenPortCount = 0
+    # -------------------------
+    # External Port Scan (LOCAL, fast with status + console output)
+    # -------------------------
+    if ($DoPorts) {
 
-    foreach ($Port in $PortsToScan) {
+        $PortsToScan   = @(80,443,8443,8080,8000,25)
+        $PortTimeoutMs = 500
+        $OpenPortCount = 0
 
-        Write-Host "[$Current/$TotalServers] $Server - Scanning port $Port..." -ForegroundColor Cyan
+        foreach ($Port in $PortsToScan) {
 
-        $PortStatus = 'Closed'
-        $Client     = New-Object System.Net.Sockets.TcpClient
+            Write-Host "[$Current/$TotalServers] $Server - Scanning port $Port..." -ForegroundColor Cyan
 
-        try {
-            $AsyncResult = $Client.BeginConnect($Server, $Port, $null, $null)
+            $PortStatus = 'Closed'
+            $Client     = New-Object System.Net.Sockets.TcpClient
 
-            if ($AsyncResult.AsyncWaitHandle.WaitOne($PortTimeoutMs, $false)) {
-                try {
-                    $Client.EndConnect($AsyncResult)
-                    $PortStatus = 'Open'
-                    $OpenPortCount++
+            try {
+                $AsyncResult = $Client.BeginConnect($Server, $Port, $null, $null)
+
+                if ($AsyncResult.AsyncWaitHandle.WaitOne($PortTimeoutMs, $false)) {
+                    try {
+                        $Client.EndConnect($AsyncResult)
+                        $PortStatus = 'Open'
+                        $OpenPortCount++
+                    }
+                    catch {
+                        $PortStatus = 'Closed'
+                    }
                 }
-                catch {
-                    $PortStatus = 'Closed'
+                else {
+                    $PortStatus = 'Filtered'
                 }
             }
-            else {
-                $PortStatus = 'Filtered'
+            catch {
+                $PortStatus = 'Error'
             }
-        }
-        catch {
-            $PortStatus = 'Error'
-        }
-        finally {
-            $Client.Close()
-        }
+            finally {
+                $Client.Close()
+            }
 
-        # Console result
-        switch ($PortStatus) {
-            'Open'     { Write-Host "[$Current/$TotalServers] $Server - Port $Port OPEN"     -ForegroundColor Magenta }
-            'Closed'   { Write-Host "[$Current/$TotalServers] $Server - Port $Port closed"   -ForegroundColor DarkGray }
-            'Filtered' { Write-Host "[$Current/$TotalServers] $Server - Port $Port filtered" -ForegroundColor Green }
-            'Error'    { Write-Host "[$Current/$TotalServers] $Server - Port $Port error"    -ForegroundColor Red }
-        }
+            # Console result
+            switch ($PortStatus) {
+                'Open'     { Write-Host "[$Current/$TotalServers] $Server - Port $Port OPEN"     -ForegroundColor Magenta }
+                'Closed'   { Write-Host "[$Current/$TotalServers] $Server - Port $Port closed"   -ForegroundColor DarkGray }
+                'Filtered' { Write-Host "[$Current/$TotalServers] $Server - Port $Port filtered" -ForegroundColor Green }
+                'Error'    { Write-Host "[$Current/$TotalServers] $Server - Port $Port error"    -ForegroundColor Red }
+            }
 
-        # Output row (unchanged schema)
-        [pscustomobject]@{
-            ComputerName = $Server
-            DataCategory = 'Network'
-            Name         = "Port $Port"
-            Value        = $PortStatus
+            # Output row (unchanged schema)
+            [pscustomobject]@{
+                ComputerName = $Server
+                DataCategory = 'Network'
+                Name         = "Port $Port"
+                Value        = $PortStatus
+            }
         }
     }
-}
-# -------------------------
-# WinRM Data Collection
-# -------------------------
-try {
-    $Result = Invoke-Command `
-        -ComputerName $Server `
-        -SessionOption $WinRMSessionOptions `
-        -ErrorAction Stop `
-        -ScriptBlock {
 
-            $Rows = @()
-            $Computer = $env:COMPUTERNAME
+    # -------------------------
+    # WinRM Data Collection
+    # -------------------------
+    try {
+        $Result = Invoke-Command `
+            -ComputerName $Server `
+            -SessionOption $WinRMSessionOptions `
+            -ErrorAction Stop `
+            -ScriptBlock {
 
-            $IISOut      = 'N/A'
-            $SQLOut      = 'N/A'
-            $LastUserOut = 'Unknown'
+                $Rows = @()
+                $Computer = $env:COMPUTERNAME
 
-            # ---------- OS ----------
-            if ($using:chkOS.Checked) {
-                $OS = Get-CimInstance Win32_OperatingSystem
-                $Rows += [pscustomobject]@{
-                    ComputerName = $Computer
-                    DataCategory = 'OS'
-                    Name         = 'Version'
-                    Value        = $OS.Caption
-                }
-            }
+                $IISOut                   = 'N/A'
+                $SQLOut                   = 'N/A'
+                $LastUserOut              = 'Unknown'
+                $LastBootOut              = 'Unknown'
+                $LastInteractiveLogonOut  = 'Unknown'
+                $LastInteractiveUserOut   = 'Unknown'
 
-            # ---------- SQL ----------
-            if ($using:chkSQL.Checked) {
-                $SqlServices = Get-Service |
-                    Where-Object {
-                        $_.Name -like 'MSSQL*' -and
-                        $_.Name -ne 'MSSQLFDLauncher'
+                # ---------- OS ----------
+                try {
+                    $OS = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+
+                    if ($using:chkOS.Checked) {
+                        $Rows += [pscustomobject]@{
+                            ComputerName = $Computer
+                            DataCategory = 'OS'
+                            Name         = 'Version'
+                            Value        = $OS.Caption
+                        }
                     }
 
-                $SQLOut = if ($SqlServices) { 'Enabled' } else { 'Absent' }
+                    if ($OS.LastBootUpTime) {
+                        $LastBootOut = ([datetime]$OS.LastBootUpTime).ToString('yyyy-MM-dd HH:mm:ss')
 
-                $Rows += [pscustomobject]@{
-                    ComputerName = $Computer
-                    DataCategory = 'SQL'
-                    Name         = 'Installed'
-                    Value        = if ($SqlServices) { 'Yes' } else { 'No' }
+                        $Rows += [pscustomobject]@{
+                            ComputerName = $Computer
+                            DataCategory = 'System'
+                            Name         = 'Last Boot Time'
+                            Value        = $LastBootOut
+                        }
+                    }
                 }
+                catch {}
 
-                foreach ($Svc in $SqlServices) {
+                # ---------- SQL ----------
+                if ($using:chkSQL.Checked) {
+                    $SqlServices = Get-Service |
+                        Where-Object {
+                            $_.Name -like 'MSSQL*' -and
+                            $_.Name -ne 'MSSQLFDLauncher'
+                        }
+
+                    $SQLOut = if ($SqlServices) { 'Enabled' } else { 'Absent' }
+
                     $Rows += [pscustomobject]@{
                         ComputerName = $Computer
                         DataCategory = 'SQL'
-                        Name         = 'Instance'
-                        Value        = $Svc.Name
+                        Name         = 'Installed'
+                        Value        = if ($SqlServices) { 'Yes' } else { 'No' }
+                    }
+
+                    foreach ($Svc in $SqlServices) {
+                        $Rows += [pscustomobject]@{
+                            ComputerName = $Computer
+                            DataCategory = 'SQL'
+                            Name         = 'Instance'
+                            Value        = $Svc.Name
+                        }
                     }
                 }
-            }
 
-            # ---------- IIS ----------
-            if ($using:chkIIS.Checked) {
-                $IIS = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
-                $IISOut = if ($IIS -and $IIS.InstallState -eq 'Installed') {
-                    'Active'
-                } else {
-                    'Inactive'
-                }
+                # ---------- IIS ----------
+                if ($using:chkIIS.Checked) {
+                    $IIS = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
+                    $IISOut = if ($IIS -and $IIS.InstallState -eq 'Installed') {
+                        'Active'
+                    } else {
+                        'Inactive'
+                    }
 
-                $Rows += [pscustomobject]@{
-                    ComputerName = $Computer
-                    DataCategory = 'IIS'
-                    Name         = 'Installed'
-                    Value        = if ($IISOut -eq 'Active') { 'Yes' } else { 'No' }
-                }
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'IIS'
+                        Name         = 'Installed'
+                        Value        = if ($IISOut -eq 'Active') { 'Yes' } else { 'No' }
+                    }
 
-                if ($IISOut -eq 'Active') {
-                    try {
-                        Import-Module WebAdministration -ErrorAction Stop
-                        foreach ($Site in Get-Website) {
-                            $Rows += [pscustomobject]@{
-                                ComputerName = $Computer
-                                DataCategory = 'IIS'
-                                Name         = 'Site'
-                                Value        = $Site.Name
+                    if ($IISOut -eq 'Active') {
+                        try {
+                            Import-Module WebAdministration -ErrorAction Stop
+                            foreach ($Site in Get-Website) {
+                                $Rows += [pscustomobject]@{
+                                    ComputerName = $Computer
+                                    DataCategory = 'IIS'
+                                    Name         = 'Site'
+                                    Value        = $Site.Name
+                                }
                             }
-                        }
-                    } catch {}
-                }
-            }
-
-            # ---------- User Folders ----------
-            if ($using:chkUsers.Checked) {
-                Get-ChildItem C:\Users -Directory |
-                    Where-Object {
-                        $_.Name -notin 'Public','Default','Default User','All Users','Administrator'
-                    } |
-                    ForEach-Object {
-                        $Rows += [pscustomobject]@{
-                            ComputerName = $Computer
-                            DataCategory = 'UserFolders'
-                            Name         = 'Folder'
-                            Value        = $_.Name
-                        }
+                        } catch {}
                     }
-            }
-
-            # ---------- Scheduled Tasks ----------
-            if ($using:chkTasks.Checked) {
-                Get-ScheduledTask |
-                    Where-Object {
-                        $_.TaskPath -notlike '\Microsoft\*' -and
-                        $_.Principal.UserId
-                    } |
-                    ForEach-Object {
-                        $Rows += [pscustomobject]@{
-                            ComputerName = $Computer
-                            DataCategory = 'ScheduledTask'
-                            Name         = $_.TaskName
-                            Value        = $_.Principal.UserId
-                        }
-                    }
-            }
-
-            # ---------- Users & Groups ----------
-            if ($using:chkUsersGroups.Checked) {
-
-                # Last logged-on user
-                try {
-                    $Reg = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI'
-                    if ($Reg.LastLoggedOnUser) {
-                        $LastUserOut = $Reg.LastLoggedOnUser
-                    }
-                } catch {}
-
-                $Rows += [pscustomobject]@{
-                    ComputerName = $Computer
-                    DataCategory = 'UsersAndGroups'
-                    Name         = 'Last Logged-On User'
-                    Value        = $LastUserOut
                 }
 
-                # Local Administrators
-                try {
-                    ([ADSI]"WinNT://$Computer/Administrators,group").psbase.Invoke('Members') |
-                        ForEach-Object {
-                            $_.GetType().InvokeMember('Name','GetProperty',$null,$_,$null)
+                # ---------- User Folders ----------
+                if ($using:chkUsers.Checked) {
+                    Get-ChildItem C:\Users -Directory |
+                        Where-Object {
+                            $_.Name -notin 'Public','Default','Default User','All Users','Administrator'
                         } |
                         ForEach-Object {
                             $Rows += [pscustomobject]@{
                                 ComputerName = $Computer
-                                DataCategory = 'UsersAndGroups'
-                                Name         = 'Local Administrators'
-                                Value        = $_
-                            }
-                        }
-                } catch {}
-
-                # Remote Desktop Users
-                try {
-                    ([ADSI]"WinNT://$Computer/Remote Desktop Users,group").psbase.Invoke('Members') |
-                        ForEach-Object {
-                            $_.GetType().InvokeMember('Name','GetProperty',$null,$_,$null)
-                        } |
-                        ForEach-Object {
-                            $Rows += [pscustomobject]@{
-                                ComputerName = $Computer
-                                DataCategory = 'UsersAndGroups'
-                                Name         = 'Remote Desktop Users'
-                                Value        = $_
-                            }
-                        }
-                } catch {}
-
-                # Local Users
-                try {
-                    Get-LocalUser |
-                        Where-Object { $_.Enabled } |
-                        ForEach-Object {
-                            $Rows += [pscustomobject]@{
-                                ComputerName = $Computer
-                                DataCategory = 'UsersAndGroups'
-                                Name         = 'Local User'
+                                DataCategory = 'UserFolders'
+                                Name         = 'Folder'
                                 Value        = $_.Name
                             }
                         }
-                } catch {}
+                }
+
+                # ---------- Scheduled Tasks ----------
+                if ($using:chkTasks.Checked) {
+                    Get-ScheduledTask |
+                        Where-Object {
+                            $_.TaskPath -notlike '\Microsoft\*' -and
+                            $_.Principal.UserId
+                        } |
+                        ForEach-Object {
+                            $Rows += [pscustomobject]@{
+                                ComputerName = $Computer
+                                DataCategory = 'ScheduledTask'
+                                Name         = $_.TaskName
+                                Value        = $_.Principal.UserId
+                            }
+                        }
+                }
+
+                # ---------- Users & Groups ----------
+                if ($using:chkUsersGroups.Checked) {
+
+                    # Last logged-on user (registry)
+                    try {
+                        $Reg = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI'
+                        if ($Reg.LastLoggedOnUser) {
+                            $LastUserOut = $Reg.LastLoggedOnUser
+                        }
+                    } catch {}
+
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'UsersAndGroups'
+                        Name         = 'Last Logged-On User'
+                        Value        = $LastUserOut
+                    }
+
+                    # Last interactive logon from Security log
+                    try {
+                        $InteractiveLogon = Get-WinEvent -FilterHashtable @{
+                            LogName = 'Security'
+                            Id      = 4624
+                        } -MaxEvents 1000 -ErrorAction Stop |
+                        ForEach-Object {
+                            try {
+                                $xml = [xml]$_.ToXml()
+                                $eventData = @{}
+                                foreach ($d in $xml.Event.EventData.Data) {
+                                    $eventData[$d.Name] = $d.'#text'
+                                }
+
+                                $logonType = 0
+                                if ($eventData.ContainsKey('LogonType') -and $eventData['LogonType']) {
+                                    $logonType = [int]$eventData['LogonType']
+                                }
+
+                                $targetUser = $eventData['TargetUserName']
+                                $targetDomain = $eventData['TargetDomainName']
+
+                                if (
+                                    $logonType -in 2,7,10,11 -and
+                                    -not [string]::IsNullOrWhiteSpace($targetUser) -and
+                                    $targetUser -notmatch '^(DWM-|UMFD-)' -and
+                                    $targetUser -notin @('SYSTEM','LOCAL SERVICE','NETWORK SERVICE','ANONYMOUS LOGON') -and
+                                    $targetDomain -ne 'Window Manager'
+                                ) {
+                                    [pscustomobject]@{
+                                        TimeCreated  = $_.TimeCreated
+                                        TargetUser   = $targetUser
+                                        TargetDomain = $targetDomain
+                                        LogonType    = $logonType
+                                    }
+                                }
+                            }
+                            catch {}
+                        } |
+                        Sort-Object TimeCreated -Descending |
+                        Select-Object -First 1
+
+                        if ($InteractiveLogon) {
+                            $LastInteractiveLogonOut = $InteractiveLogon.TimeCreated.ToString('yyyy-MM-dd HH:mm:ss')
+
+                            if ([string]::IsNullOrWhiteSpace($InteractiveLogon.TargetDomain)) {
+                                $LastInteractiveUserOut = $InteractiveLogon.TargetUser
+                            }
+                            else {
+                                $LastInteractiveUserOut = "$($InteractiveLogon.TargetDomain)\$($InteractiveLogon.TargetUser)"
+                            }
+                        }
+                    }
+                    catch {}
+
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'UsersAndGroups'
+                        Name         = 'Last Interactive Logon Time'
+                        Value        = $LastInteractiveLogonOut
+                    }
+
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'UsersAndGroups'
+                        Name         = 'Last Interactive Logon User'
+                        Value        = $LastInteractiveUserOut
+                    }
+
+                    # Local Administrators
+                    try {
+                        ([ADSI]"WinNT://$Computer/Administrators,group").psbase.Invoke('Members') |
+                            ForEach-Object {
+                                $_.GetType().InvokeMember('Name','GetProperty',$null,$_,$null)
+                            } |
+                            ForEach-Object {
+                                $Rows += [pscustomobject]@{
+                                    ComputerName = $Computer
+                                    DataCategory = 'UsersAndGroups'
+                                    Name         = 'Local Administrators'
+                                    Value        = $_
+                                }
+                            }
+                    } catch {}
+
+                    # Remote Desktop Users
+                    try {
+                        ([ADSI]"WinNT://$Computer/Remote Desktop Users,group").psbase.Invoke('Members') |
+                            ForEach-Object {
+                                $_.GetType().InvokeMember('Name','GetProperty',$null,$_,$null)
+                            } |
+                            ForEach-Object {
+                                $Rows += [pscustomobject]@{
+                                    ComputerName = $Computer
+                                    DataCategory = 'UsersAndGroups'
+                                    Name         = 'Remote Desktop Users'
+                                    Value        = $_
+                                }
+                            }
+                    } catch {}
+
+                    # Local Users
+                    try {
+                        Get-LocalUser |
+                            Where-Object { $_.Enabled } |
+                            ForEach-Object {
+                                $Rows += [pscustomobject]@{
+                                    ComputerName = $Computer
+                                    DataCategory = 'UsersAndGroups'
+                                    Name         = 'Local User'
+                                    Value        = $_.Name
+                                }
+                            }
+                    } catch {}
+                }
+
+                return [pscustomobject]@{
+                    Rows                 = $Rows
+                    IISState             = $IISOut
+                    SQLState             = $SQLOut
+                    LastUser             = $LastUserOut
+                    LastBoot             = $LastBootOut
+                    LastInteractiveLogon = $LastInteractiveLogonOut
+                    LastInteractiveUser  = $LastInteractiveUserOut
+                }
             }
 
-            return [pscustomobject]@{
-                Rows     = $Rows
-                IISState = $IISOut
-                SQLState = $SQLOut
-                LastUser = $LastUserOut
-            }
-        }
+        $WinRMStatus           = 'Success'
+        $IISSummaryState       = $Result.IISState
+        $SQLSummaryState       = $Result.SQLState
+        $LastLoggedUser        = $Result.LastUser
+        $LastBootTime          = $Result.LastBoot
+        $LastInteractiveLogon  = $Result.LastInteractiveLogon
+        $LastInteractiveUser   = $Result.LastInteractiveUser
 
-    $WinRMStatus     = 'Success'
-    $IISSummaryState = $Result.IISState
-    $SQLSummaryState = $Result.SQLState
-    $LastLoggedUser  = $Result.LastUser
-
-    $Result.Rows
-}
-catch {
-    $WinRMStatus = 'Failed'
-
-    [pscustomobject]@{
-        ComputerName = $Server
-        DataCategory = 'ERROR'
-        Name         = 'QueryFailed'
-        Value        = $_.Exception.Message
+        $Result.Rows
     }
-}
+    catch {
+        $WinRMStatus = 'Failed'
 
+        [pscustomobject]@{
+            ComputerName = $Server
+            DataCategory = 'ERROR'
+            Name         = 'QueryFailed'
+            Value        = $_.Exception.Message
+        }
+    }
 
     # -------------------------
     # END HOST — Result Summary
@@ -558,7 +653,7 @@ catch {
         ComputerName = "└ $Server | End Scan Summary ┘"
         DataCategory = 'Summary'
         Name         = '└ END HOST ┘'
-        Value        = "██ $Server ██ | State=$OnlineState | IIS=$IISSummaryState | SQL=$SQLSummaryState | LastUser=$LastLoggedUser | $PortsSummary | WinRM=$WinRMStatus"
+        Value        = "██ $Server ██ | State=$OnlineState | IIS=$IISSummaryState | SQL=$SQLSummaryState | LastUser=$LastLoggedUser | Boot=$LastBootTime | LastUsed=$LastInteractiveLogon | LastUsedBy=$LastInteractiveUser | $PortsSummary | WinRM=$WinRMStatus"
     }
 }
 
