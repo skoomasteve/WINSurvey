@@ -31,4 +31,9 @@ WINSurvey is useful for domain environment intelligence or pre-OS-upgrade reconn
 
 -- RSAT required for domain device scan + DomainMachines.txt output
 
+-- Port scan values are processesed as: 
+   - If this handshake completes in time → Open 
+   - If the server refuses it → Closed 
+   - If nothing answers → Filtered
+
 -- The first line of txt/csv import files will be treated as a hostname
