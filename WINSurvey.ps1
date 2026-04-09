@@ -282,43 +282,63 @@ $AllResults = foreach ($Server in $Servers) {
         }
     }
 # -------------------------
-# External Port Scan (LOCAL, fast with timeout)
+# External Port Scan (LOCAL, fast with status + console output)
 # -------------------------
 if ($DoPorts) {
 
     $PortsToScan   = @(80,443,8443,8080,8000,25)
-    $PortTimeoutMs = 500   # <<< ADJUST HERE (milliseconds)
+    $PortTimeoutMs = 500
     $OpenPortCount = 0
 
     foreach ($Port in $PortsToScan) {
 
-        $IsOpen = $false
-        $Client = New-Object System.Net.Sockets.TcpClient
+        Write-Host "[$Current/$TotalServers] $Server - Scanning port $Port..." -ForegroundColor Cyan
+
+        $PortStatus = 'Closed'
+        $Client     = New-Object System.Net.Sockets.TcpClient
 
         try {
             $AsyncResult = $Client.BeginConnect($Server, $Port, $null, $null)
 
             if ($AsyncResult.AsyncWaitHandle.WaitOne($PortTimeoutMs, $false)) {
-                $Client.EndConnect($AsyncResult)
-                $IsOpen = $true
-                $OpenPortCount++
+                try {
+                    $Client.EndConnect($AsyncResult)
+                    $PortStatus = 'Open'
+                    $OpenPortCount++
+                }
+                catch {
+                    $PortStatus = 'Closed'
+                }
             }
             else {
-                $Client.Close()
+                $PortStatus = 'Filtered'
             }
         }
         catch {
+            $PortStatus = 'Error'
+        }
+        finally {
             $Client.Close()
         }
 
+        # Console result
+        switch ($PortStatus) {
+            'Open'     { Write-Host "[$Current/$TotalServers] $Server - Port $Port OPEN"     -ForegroundColor Green }
+            'Closed'   { Write-Host "[$Current/$TotalServers] $Server - Port $Port closed"   -ForegroundColor DarkGray }
+            'Filtered' { Write-Host "[$Current/$TotalServers] $Server - Port $Port filtered" -ForegroundColor Yellow }
+            'Error'    { Write-Host "[$Current/$TotalServers] $Server - Port $Port error"    -ForegroundColor Red }
+        }
+
+        # Output row (unchanged schema)
         [pscustomobject]@{
             ComputerName = $Server
             DataCategory = 'Network'
             Name         = "Port $Port"
-            Value        = if ($IsOpen) { 'Open' } else { 'Closed' }
+            Value        = $PortStatus
         }
     }
-}# -------------------------
+}
+# -------------------------
 # WinRM Data Collection
 # -------------------------
 try {
