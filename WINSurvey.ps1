@@ -2,6 +2,10 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
+# ---------- WinRM Timeout Configuration ----------
+# 120 seconds per host to prevent hangs (PowerShell 5.1 compatible)
+$WinRMSessionOptions = New-PSSessionOption -OperationTimeout 120000
+
 # ---------- Build the Form ----------
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'WINSurvey | SS'
@@ -50,6 +54,77 @@ $btnBrowse.Add_Click({
         $txtFile.Text = $fileDialog.FileName
     }
 })
+
+
+# Generate Domain Machines button
+$btnGenerateAD = New-Object System.Windows.Forms.Button
+$btnGenerateAD.Text = 'Generate DomainMachines.txt'
+$btnGenerateAD.Size = New-Object System.Drawing.Size(220,26)
+$btnGenerateAD.Location = New-Object System.Drawing.Point(240,200)
+$form.Controls.Add($btnGenerateAD)
+
+
+
+$btnGenerateAD.Add_Click({
+
+    try {
+        Import-Module ActiveDirectory -ErrorAction Stop
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            'ActiveDirectory module is not available on this machine. Install RSAT',
+            'Error',
+            'OK',
+            'Error'
+        )
+        return
+    }
+
+    $DaysBack = 10
+    $CutoffDate = (Get-Date).AddDays(-$DaysBack)
+
+    try {
+        $Computers = Get-ADComputer `
+            -Filter { Enabled -eq $true -and LastLogonTimeStamp -gt $CutoffDate } `
+            -Properties Name, LastLogonTimeStamp
+    }
+    catch {
+        [System.Windows.Forms.MessageBox]::Show(
+            'Failed to query Active Directory.',
+            'Error',
+            'OK',
+            'Error'
+        )
+        return
+    }
+
+    if (-not $Computers) {
+        [System.Windows.Forms.MessageBox]::Show(
+            "No active domain computers found in the last $DaysBack days.",
+            'Information',
+            'OK',
+            'Information'
+        )
+        return
+    }
+
+    # Resolve output path (same user context)
+    $Desktop = [Environment]::GetFolderPath('Desktop')
+    $OutputPath = Join-Path $Desktop 'DomainMachines.txt'
+
+    $Computers |
+        Select-Object -ExpandProperty Name |
+        Sort-Object -Unique |
+        Set-Content -Path $OutputPath -Encoding ASCII
+
+    [System.Windows.Forms.MessageBox]::Show(
+        "DomainMachines.txt created on Desktop.`r`n`r`nMachines found (active in past 10 days): $($Computers.Count)",
+        'Success',
+        'OK',
+        'Information'
+    )
+})
+
 
 # CSV export checkbox
 $chkCsv = New-Object System.Windows.Forms.CheckBox
@@ -112,11 +187,13 @@ $form.Controls.Add($btnCancel)
 $form.ShowDialog() | Out-Null
 
 # ---------- Input Validation ----------
+
 if ($form.Tag -ne 'OK' -or
     ([string]::IsNullOrWhiteSpace($txtServer.Text) -and
      [string]::IsNullOrWhiteSpace($txtFile.Text))) {
     return
 }
+
 
 $ExportCsv = $chkCsv.Checked
 $DoPing    = $chkPing.Checked
@@ -142,195 +219,123 @@ $Current = 0
 Write-Host "Starting server inventory for $TotalServers server(s)..."
 
 # ---------- Query Servers ----------
-# ---------- Query Servers ----------
 $AllResults = foreach ($Server in $Servers) {
 
     $Current++
     Write-Host "[$Current/$TotalServers] Querying $Server..."
 
-    # --- Initialize per-host summary tracking ---
-    $PingStatus     = 'Unknown'
-    $TTLValue       = ''
-    $OSHeuristic    = 'Unknown'
-    $OpenPortCount  = 0
-    $WinRMStatus    = 'NotAttempted'
+    $PingStatus = 'Unknown'
+    $TTLValue   = ''
+    $OSHeuristic = 'Unknown'
+    $OpenPortCount = 'Not Scanned'
+    $WinRMStatus = 'NotAttempted'
 
-    # --- ICMP Ping (LOCAL) ---
+
+    # --- ICMP Ping (PS 5.1 safe) ---
     if ($DoPing) {
-        $ping = Test-Connection -ComputerName $Server -Count 1 -ErrorAction SilentlyContinue
-        if ($ping) {
-            $ttl = $ping.TimeToLive
+        $pingUp = Test-Connection -ComputerName $Server -Count 1 -Quiet -ErrorAction SilentlyContinue
+        if ($pingUp) {
+            $ping = Test-Connection -ComputerName $Server -Count 1 -ErrorAction SilentlyContinue
+            $TTLValue = $ping.TimeToLive
+            $PingStatus = 'Online'
 
-            if ($ttl -ge 65) {
-                $osGuess = 'Windows-like (TTL heuristic)'
-            }
-            elseif ($ttl -ge 50) {
-                $osGuess = 'Linux/Unix-like (TTL heuristic)'
-            }
-            else {
-                $osGuess = 'Unknown / Network device'
-            }
-
-            $PingStatus  = 'Online'
-            $TTLValue    = $ttl
-            $OSHeuristic = $osGuess
+            if ($TTLValue -ge 65) { $OSHeuristic = 'Windows-like (TTL heuristic)' }
+            elseif ($TTLValue -ge 50) { $OSHeuristic = 'Linux-like (TTL heuristic)' }
+            else { $OSHeuristic = 'Unknown / Network device' }
         }
         else {
             $PingStatus = 'No response'
         }
     }
+    # --- Build scan plan summary (intent, not results) ---
+$ScanItems = @()
 
-    # --- SUMMARY ROW (EMITTED FIRST, PLACEHOLDER COUNTS) ---
-    [pscustomobject]@{
-        ComputerName = $Server
-        DataCategory = 'Summary'
-        Name         = '=== HOST SUMMARY ==='
-        Value        = "████ $Server ████ | Ping=$PingStatus | TTL=$TTLValue | OS=$OSHeuristic | PortsOpen=pending | WinRM=pending"
-    }
+if ($chkPing.Checked)  { $ScanItems += 'Ping' }
+if ($chkOS.Checked)    { $ScanItems += 'OS' }
+if ($chkSQL.Checked)   { $ScanItems += 'SQL' }
+if ($chkIIS.Checked)   { $ScanItems += 'IIS' }
+if ($chkUsers.Checked) { $ScanItems += 'Users' }
+if ($chkTasks.Checked) { $ScanItems += 'Tasks' }
+if ($chkPorts.Checked) { $ScanItems += 'Ports' }
 
-    # --- Network detail row (ICMP) ---
-    if ($DoPing) {
-        if ($PingStatus -eq 'Online') {
-            [pscustomobject]@{
-                ComputerName = $Server
-                DataCategory = 'Network'
-                Name         = 'ICMP Ping'
-                Value        = "Online | TTL=$TTLValue | OS Guess=$OSHeuristic"
-            }
-        }
-        else {
-            [pscustomobject]@{
-                ComputerName = $Server
-                DataCategory = 'Network'
-                Name         = 'ICMP Ping'
-                Value        = 'No response'
-            }
-        }
+$ScanPlan =
+    if ($ScanItems.Count -gt 0) {
+        $ScanItems -join ', '
     }
+    else {
+        'Nothing (all checks disabled)'
+    }
+ # --- BEGIN HOST (intent summary) ---
+[pscustomobject]@{
+    ComputerName = "┌ BEGIN $Server Scan | Summary ┐"
+    DataCategory = 'Summary'
+    Name         = '┌ BEGIN HOST ┐'
+    Value        = "██ $Server ██ | Scan: $ScanPlan"
+}
 
     try {
-        # --- Run all WinRM-based inventory and network port checks ---
-        $Result = Invoke-Command -ComputerName $Server -ErrorAction Stop -ScriptBlock {
+        $Result = Invoke-Command `
+            -ComputerName $Server `
+            -SessionOption $WinRMSessionOptions `
+            -ErrorAction Stop `
+            -ScriptBlock {
 
-            $Rows = @()
-            $LocalOpenPortCount = 0
-            $Computer = $env:COMPUTERNAME
+                $Rows = @()
+                $LocalOpenPortCount = $null
+                $Computer = $env:COMPUTERNAME
 
-            # ---------- OS ----------
-            if ($using:chkOS.Checked) {
-                $OS = Get-CimInstance Win32_OperatingSystem
-                $Rows += [pscustomobject]@{
-                    ComputerName = $Computer
-                    DataCategory = 'OS'
-                    Name         = 'Version'
-                    Value        = $OS.Caption
-                }
-            }
-
-            # ---------- SQL ----------
-            if ($using:chkSQL.Checked) {
-                $SqlServices = Get-Service |
-                    Where-Object { $_.Name -like 'MSSQL*' -and $_.Name -ne 'MSSQLFDLauncher' }
-
-                $Rows += [pscustomobject]@{
-                    ComputerName = $Computer
-                    DataCategory = 'SQL'
-                    Name         = 'Installed'
-                    Value        = if ($SqlServices) { 'Yes' } else { 'No' }
+                if ($using:chkOS.Checked) {
+                    $OS = Get-CimInstance Win32_OperatingSystem
+                    $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='OS'; Name='Version'; Value=$OS.Caption }
                 }
 
-                foreach ($Svc in $SqlServices) {
-                    $Instance = if ($Svc.Name -eq 'MSSQLSERVER') {
-                        'MSSQLSERVER (Default)'
-                    } else {
-                        $Svc.Name -replace '^MSSQL\$', ''
-                    }
+                if ($using:chkSQL.Checked) {
+                    $Sql = Get-Service | Where-Object { $_.Name -like 'MSSQL*' -and $_.Name -ne 'MSSQLFDLauncher' }
+                    $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='SQL'; Name='Installed'; Value= if ($Sql){'Yes'}else{'No'} }
 
-                    $Rows += [pscustomobject]@{
-                        ComputerName = $Computer
-                        DataCategory = 'SQL'
-                        Name         = 'Instance'
-                        Value        = $Instance
+                    foreach ($Svc in $Sql) {
+                        $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='SQL'; Name='Instance'; Value=$Svc.Name }
                     }
                 }
-            }
 
-            # ---------- IIS ----------
-            if ($using:chkIIS.Checked) {
-                $IIS = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
-                $Installed = $IIS -and $IIS.InstallState -eq 'Installed'
-
-                $Rows += [pscustomobject]@{
-                    ComputerName = $Computer
-                    DataCategory = 'IIS'
-                    Name         = 'Installed'
-                    Value        = if ($Installed) { 'Yes' } else { 'No' }
+                if ($using:chkIIS.Checked) {
+                    $IIS = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
+                    $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='IIS'; Name='Installed'; Value= if ($IIS.InstallState -eq 'Installed'){'Yes'}else{'No'} }
                 }
 
-                if ($Installed) {
-                    Import-Module WebAdministration
-                    foreach ($Site in Get-Website) {
-                        $Rows += [pscustomobject]@{
-                            ComputerName = $Computer
-                            DataCategory = 'IIS'
-                            Name         = 'Site'
-                            Value        = $Site.Name
+                if ($using:chkUsers.Checked) {
+                    Get-ChildItem C:\Users -Directory |
+                        Where-Object { $_.Name -notin 'Public','Default','Default User','All Users','Administrator' } |
+                        ForEach-Object {
+                            $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='UserFolders'; Name='Folder'; Value=$_.Name }
                         }
+                }
+
+                if ($using:chkTasks.Checked) {
+                    Get-ScheduledTask |
+                        Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.Principal.UserId } |
+                        ForEach-Object {
+                            $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='ScheduledTask'; Name=$_.TaskName; Value=$_.Principal.UserId }
+                        }
+                }
+
+                if ($using:DoPorts) {
+                    foreach ($port in 80,443,8443,8080,8000,25) {
+                        $open = Test-NetConnection -ComputerName $Computer -Port $port -InformationLevel Quiet
+                        if ($open) { $LocalOpenPortCount++ }
+                        $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='Network'; Name="Port $port"; Value= if ($open){'Open'}else{'Closed'} }
                     }
                 }
+
+                return [pscustomobject]@{ Rows=$Rows; OpenPortCount=$LocalOpenPortCount }
             }
 
-            # ---------- User Profiles ----------
-            if ($using:chkUsers.Checked) {
-                Get-ChildItem C:\Users -Directory |
-                    Where-Object { $_.Name -notin 'Public','Default','Default User','All Users','Administrator' } |
-                    ForEach-Object {
-                        $Rows += [pscustomobject]@{
-                            ComputerName = $Computer
-                            DataCategory = 'UserFolders'
-                            Name         = 'Folder'
-                            Value        = $_.Name
-                        }
-                    }
-            }
+        $WinRMStatus = 'Success'
+       
+if ($DoPorts) {
+    $OpenPortCount = $Result.OpenPortCount
+}
 
-            # ---------- Scheduled Tasks ----------
-            if ($using:chkTasks.Checked) {
-                Get-ScheduledTask |
-                    Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.Principal.UserId } |
-                    ForEach-Object {
-                        $Rows += [pscustomobject]@{
-                            ComputerName = $Computer
-                            DataCategory = 'ScheduledTask'
-                            Name         = $_.TaskName
-                            Value        = $_.Principal.UserId
-                        }
-                    }
-            }
-
-            # ---------- Network Ports ----------
-            if ($using:DoPorts) {
-                foreach ($port in 80,443,8443,8080,8000,25) {
-                    $open = Test-NetConnection -ComputerName $Computer -Port $port -InformationLevel Quiet
-                    if ($open) { $LocalOpenPortCount++ }
-
-                    $Rows += [pscustomobject]@{
-                        ComputerName = $Computer
-                        DataCategory = 'Network'
-                        Name         = "Port $port"
-                        Value        = if ($open) { 'Open' } else { 'Closed' }
-                    }
-                }
-            }
-
-            return [pscustomobject]@{
-                Rows          = $Rows
-                OpenPortCount = $LocalOpenPortCount
-            }
-        }
-
-        $WinRMStatus   = 'Success'
-        $OpenPortCount = $Result.OpenPortCount
         $Result.Rows
     }
     catch {
@@ -338,27 +343,26 @@ $AllResults = foreach ($Server in $Servers) {
         [pscustomobject]@{
             ComputerName = $Server
             DataCategory = 'ERROR'
-            Name         = 'QueryFailed'
-            Value        = $_.Exception.Message
+            Name = 'QueryFailed'
+            Value = $_.Exception.Message
         }
     }
 
-    # --- FINAL SUMMARY ROW (CORRECT COUNTS, EMITTED LAST) ---
+    # --- END HOST ---
     [pscustomobject]@{
-        ComputerName = $Server
+        ComputerName = "└ END $Server Scan | Summary: ┘"
         DataCategory = 'Summary'
-        Name         = '=== HOST SUMMARY (FINAL) ==='
-        Value        = "████ $Server ████ | Ping=$PingStatus | TTL=$TTLValue | OS=$OSHeuristic | PortsOpen=$OpenPortCount | WinRM=$WinRMStatus"
+        Name = '└ END HOST ┘'
+        Value = "██ $Server ██ | PortsOpen=$OpenPortCount | WinRM=$WinRMStatus"
     }
 }
 
-# ---------- Optional CSV Export ----------
-if ($ExportCsv -and $AllResults) {
-    $Desktop = [Environment]::GetFolderPath('Desktop')
-    $AllResults | Export-Csv (
-        Join-Path $Desktop "ServerInventory_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
-    ) -NoTypeInformation
-}
+
+$Desktop = [Environment]::GetFolderPath('Desktop')
+$AllResults | Export-Csv (
+    Join-Path $Desktop "ServerInventory_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
+) -NoTypeInformation
+
 
 # ---------- Output ----------
 if ($AllResults) {
