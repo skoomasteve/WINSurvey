@@ -323,9 +323,9 @@ if ($DoPorts) {
 
         # Console result
         switch ($PortStatus) {
-            'Open'     { Write-Host "[$Current/$TotalServers] $Server - Port $Port OPEN"     -ForegroundColor Green }
+            'Open'     { Write-Host "[$Current/$TotalServers] $Server - Port $Port OPEN"     -ForegroundColor Magenta }
             'Closed'   { Write-Host "[$Current/$TotalServers] $Server - Port $Port closed"   -ForegroundColor DarkGray }
-            'Filtered' { Write-Host "[$Current/$TotalServers] $Server - Port $Port filtered" -ForegroundColor Yellow }
+            'Filtered' { Write-Host "[$Current/$TotalServers] $Server - Port $Port filtered" -ForegroundColor Green }
             'Error'    { Write-Host "[$Current/$TotalServers] $Server - Port $Port error"    -ForegroundColor Red }
         }
 
