@@ -1,3 +1,5 @@
+
+
 # Load assemblies
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
@@ -10,7 +12,7 @@ $WinRMSessionOptions = New-PSSessionOption -OperationTimeout 120000
 $form = New-Object System.Windows.Forms.Form
 $form.Text = 'WINSurvey | SS'
 $form.AutoScaleMode = 'Font'
-$form.ClientSize = New-Object System.Drawing.Size(590,420)
+$form.ClientSize = New-Object System.Drawing.Size(590,520)
 $form.StartPosition = 'CenterScreen'
 $form.AutoScroll = $true
 
@@ -55,27 +57,21 @@ $btnBrowse.Add_Click({
     }
 })
 
-
 # Generate Domain Machines button
 $btnGenerateAD = New-Object System.Windows.Forms.Button
 $btnGenerateAD.Text = 'Generate DomainMachines.txt'
 $btnGenerateAD.Size = New-Object System.Drawing.Size(220,26)
-$btnGenerateAD.Location = New-Object System.Drawing.Point(240,200)
+$btnGenerateAD.Location = New-Object System.Drawing.Point(220,125)
 $form.Controls.Add($btnGenerateAD)
 
-
-
 $btnGenerateAD.Add_Click({
-
     try {
         Import-Module ActiveDirectory -ErrorAction Stop
     }
     catch {
         [System.Windows.Forms.MessageBox]::Show(
-            'ActiveDirectory module is not available on this machine. Install RSAT',
-            'Error',
-            'OK',
-            'Error'
+            'ActiveDirectory module is not available on this machine. Install RSAT.',
+            'Error','OK','Error'
         )
         return
     }
@@ -91,9 +87,7 @@ $btnGenerateAD.Add_Click({
     catch {
         [System.Windows.Forms.MessageBox]::Show(
             'Failed to query Active Directory.',
-            'Error',
-            'OK',
-            'Error'
+            'Error','OK','Error'
         )
         return
     }
@@ -101,14 +95,11 @@ $btnGenerateAD.Add_Click({
     if (-not $Computers) {
         [System.Windows.Forms.MessageBox]::Show(
             "No active domain computers found in the last $DaysBack days.",
-            'Information',
-            'OK',
-            'Information'
+            'Information','OK','Information'
         )
         return
     }
 
-    # Resolve output path (same user context)
     $Desktop = [Environment]::GetFolderPath('Desktop')
     $OutputPath = Join-Path $Desktop 'DomainMachines.txt'
 
@@ -118,13 +109,10 @@ $btnGenerateAD.Add_Click({
         Set-Content -Path $OutputPath -Encoding ASCII
 
     [System.Windows.Forms.MessageBox]::Show(
-        "DomainMachines.txt created on Desktop.`r`n`r`nMachines found (active in past 10 days): $($Computers.Count)",
-        'Success',
-        'OK',
-        'Information'
+        "DomainMachines.txt created on Desktop.`r`nMachines found (active in past $DaysBack days): $($Computers.Count)",
+        'Success','OK','Information'
     )
 })
-
 
 # CSV export checkbox
 $chkCsv = New-Object System.Windows.Forms.CheckBox
@@ -137,13 +125,13 @@ $form.Controls.Add($chkCsv)
 $grpData = New-Object System.Windows.Forms.GroupBox
 $grpData.Text = 'Datapoints to query'
 $grpData.Location = New-Object System.Drawing.Point(20,130)
-$grpData.Size = New-Object System.Drawing.Size(480,200)
+$grpData.Size = New-Object System.Drawing.Size(480,300)
 $form.Controls.Add($grpData)
 
 $flow = New-Object System.Windows.Forms.FlowLayoutPanel
 $flow.Parent = $grpData
 $flow.Location = New-Object System.Drawing.Point(10,20)
-$flow.Size = New-Object System.Drawing.Size(460,170)
+$flow.Size = New-Object System.Drawing.Size(460,270)
 $flow.FlowDirection = 'TopDown'
 $flow.WrapContents = $false
 $flow.AutoScroll = $true
@@ -159,45 +147,45 @@ function New-DataCheckbox {
     return $cb
 }
 
-$chkOS    = New-DataCheckbox 'OS Version'
-$chkSQL   = New-DataCheckbox 'SQL Installed / Instances'
-$chkIIS   = New-DataCheckbox 'IIS Installed / Sites'
-$chkUsers = New-DataCheckbox 'User Folders'
-$chkTasks = New-DataCheckbox 'Scheduled Tasks'
-$chkPing  = New-DataCheckbox 'ICMP Ping'
-$chkPorts = New-DataCheckbox 'Open Web Ports (80,443,8443,8080,8000,25)'
+$chkOS          = New-DataCheckbox 'Windows Version'
+$chkSQL         = New-DataCheckbox 'SQL Installed / Instances'
+$chkIIS         = New-DataCheckbox 'IIS Installed / Sites'
+$chkUsersGroups = New-DataCheckbox 'Users and Groups (Last Login, Admins, RDP)'
+$chkUsers       = New-DataCheckbox 'User Folders'
+$chkTasks       = New-DataCheckbox 'Scheduled Tasks'
+$chkPing        = New-DataCheckbox 'ICMP Ping'
+$chkPorts       = New-DataCheckbox 'Open Web Ports (80,443,8443,8080,8000,25)'
 
 $flow.Controls.AddRange(@(
-    $chkOS,$chkSQL,$chkIIS,$chkUsers,$chkTasks,$chkPing,$chkPorts
+    $chkOS,$chkSQL,$chkIIS,$chkUsersGroups,$chkUsers,$chkTasks,$chkPing,$chkPorts
 ))
 
 # OK / Cancel buttons
 $btnOK = New-Object System.Windows.Forms.Button
 $btnOK.Text = 'OK'
-$btnOK.Location = New-Object System.Drawing.Point(180,350)
+$btnOK.Location = New-Object System.Drawing.Point(180,460)
 $btnOK.Add_Click({ $form.Tag = 'OK'; $form.Close() })
 $form.Controls.Add($btnOK)
 
 $btnCancel = New-Object System.Windows.Forms.Button
 $btnCancel.Text = 'Cancel'
-$btnCancel.Location = New-Object System.Drawing.Point(275,350)
+$btnCancel.Location = New-Object System.Drawing.Point(275,460)
 $btnCancel.Add_Click({ $form.Tag = 'Cancel'; $form.Close() })
 $form.Controls.Add($btnCancel)
 
 $form.ShowDialog() | Out-Null
 
 # ---------- Input Validation ----------
-
 if ($form.Tag -ne 'OK' -or
     ([string]::IsNullOrWhiteSpace($txtServer.Text) -and
      [string]::IsNullOrWhiteSpace($txtFile.Text))) {
     return
 }
 
-
-$ExportCsv = $chkCsv.Checked
-$DoPing    = $chkPing.Checked
-$DoPorts   = $chkPorts.Checked
+$ExportCsv      = $chkCsv.Checked
+$DoPing         = $chkPing.Checked
+$DoPorts        = $chkPorts.Checked
+$DoUsersGroups  = $chkUsersGroups.Checked
 
 $Servers = @()
 if ($txtServer.Text) { $Servers += $txtServer.Text.Trim() }
@@ -212,67 +200,129 @@ if ($txtFile.Text) {
     }
 }
 
-$Servers = $Servers | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object -Unique
+$Servers = $Servers | Where-Object { $_ } | Sort-Object -Unique
 $TotalServers = $Servers.Count
 $Current = 0
 
 Write-Host "Starting server inventory for $TotalServers server(s)..."
 
 # ---------- Query Servers ----------
+# ---------- Query Servers ----------
+# ---------- Query Servers ----------
 $AllResults = foreach ($Server in $Servers) {
 
     $Current++
     Write-Host "[$Current/$TotalServers] Querying $Server..."
 
-    $PingStatus = 'Unknown'
-    $TTLValue   = ''
-    $OSHeuristic = 'Unknown'
-    $OpenPortCount = 'Not Scanned'
-    $WinRMStatus = 'NotAttempted'
+    # -------------------------
+    # Per-host summary state
+    # -------------------------
+    $PingStatus        = 'Unknown'
+    $OnlineState       = 'Unknown'
+    $TTLValue          = ''
+    $OSHeuristic       = 'Unknown'
+    $OpenPortCount     = 'Not Scanned'
+    $WinRMStatus       = 'NotAttempted'
+    $IISSummaryState   = 'N/A'
+    $SQLSummaryState   = 'N/A'
+    $LastLoggedUser    = 'Unknown'
 
+    # -------------------------
+    # BEGIN HOST — Scan Intent
+    # -------------------------
+    $ScanItems = @()
+    if ($DoPing)         { $ScanItems += 'Ping' }
+    if ($chkOS.Checked)  { $ScanItems += 'OS' }
+    if ($chkSQL.Checked) { $ScanItems += 'SQL' }
+    if ($chkIIS.Checked) { $ScanItems += 'IIS' }
+    if ($chkUsers.Checked) { $ScanItems += 'UserFolders' }
+    if ($chkTasks.Checked) { $ScanItems += 'ScheduledTasks' }
+    if ($DoUsersGroups)  { $ScanItems += 'UsersAndGroups' }
+    if ($DoPorts)        { $ScanItems += 'Ports' }
 
-    # --- ICMP Ping (PS 5.1 safe) ---
+    [pscustomobject]@{
+        ComputerName = "┌$Server | Preliminary Scan Summary ┐"
+        DataCategory = 'Summary'
+        Name         = '┌ BEGIN HOST ┐'
+        Value        = "██ $Server ██ | Scan: $($ScanItems -join ', ')"
+    }
+
+    # -------------------------
+    # ICMP Ping (local)
+    # -------------------------
     if ($DoPing) {
-        $pingUp = Test-Connection -ComputerName $Server -Count 1 -Quiet -ErrorAction SilentlyContinue
-        if ($pingUp) {
-            $ping = Test-Connection -ComputerName $Server -Count 1 -ErrorAction SilentlyContinue
-            $TTLValue = $ping.TimeToLive
-            $PingStatus = 'Online'
+        $PingUp = Test-Connection -ComputerName $Server -Count 1 -Quiet -ErrorAction SilentlyContinue
+        if ($PingUp) {
+            $Ping = Test-Connection -ComputerName $Server -Count 1 -ErrorAction SilentlyContinue
+            $TTLValue    = $Ping.TimeToLive
+            $PingStatus  = 'Online'
+            $OnlineState = 'Online'
 
-            if ($TTLValue -ge 65) { $OSHeuristic = 'Windows-like (TTL heuristic)' }
+            if     ($TTLValue -ge 65) { $OSHeuristic = 'Windows-like (TTL heuristic)' }
             elseif ($TTLValue -ge 50) { $OSHeuristic = 'Linux-like (TTL heuristic)' }
-            else { $OSHeuristic = 'Unknown / Network device' }
+            else                      { $OSHeuristic = 'Unknown / Network device' }
+
+            [pscustomobject]@{
+                ComputerName = $Server
+                DataCategory = 'Network'
+                Name         = 'ICMP Ping'
+                Value        = "Online | TTL=$TTLValue | OS Guess=$OSHeuristic"
+            }
         }
         else {
-            $PingStatus = 'No response'
+            $PingStatus  = 'No response'
+            $OnlineState = 'Offline'
+
+            [pscustomobject]@{
+                ComputerName = $Server
+                DataCategory = 'Network'
+                Name         = 'ICMP Ping'
+                Value        = 'No response'
+            }
         }
     }
-    # --- Build scan plan summary (intent, not results) ---
-$ScanItems = @()
+# -------------------------
+# External Port Scan (LOCAL, fast with timeout)
+# -------------------------
+if ($DoPorts) {
 
-if ($chkPing.Checked)  { $ScanItems += 'Ping' }
-if ($chkOS.Checked)    { $ScanItems += 'OS' }
-if ($chkSQL.Checked)   { $ScanItems += 'SQL' }
-if ($chkIIS.Checked)   { $ScanItems += 'IIS' }
-if ($chkUsers.Checked) { $ScanItems += 'Users' }
-if ($chkTasks.Checked) { $ScanItems += 'Tasks' }
-if ($chkPorts.Checked) { $ScanItems += 'Ports' }
+    $PortsToScan   = @(80,443,8443,8080,8000,25)
+    $PortTimeoutMs = 500   # <<< ADJUST HERE (milliseconds)
+    $OpenPortCount = 0
 
-$ScanPlan =
-    if ($ScanItems.Count -gt 0) {
-        $ScanItems -join ', '
+    foreach ($Port in $PortsToScan) {
+
+        $IsOpen = $false
+        $Client = New-Object System.Net.Sockets.TcpClient
+
+        try {
+            $AsyncResult = $Client.BeginConnect($Server, $Port, $null, $null)
+
+            if ($AsyncResult.AsyncWaitHandle.WaitOne($PortTimeoutMs, $false)) {
+                $Client.EndConnect($AsyncResult)
+                $IsOpen = $true
+                $OpenPortCount++
+            }
+            else {
+                $Client.Close()
+            }
+        }
+        catch {
+            $Client.Close()
+        }
+
+        [pscustomobject]@{
+            ComputerName = $Server
+            DataCategory = 'Network'
+            Name         = "Port $Port"
+            Value        = if ($IsOpen) { 'Open' } else { 'Closed' }
+        }
     }
-    else {
-        'Nothing (all checks disabled)'
-    }
- # --- BEGIN HOST (intent summary) ---
-[pscustomobject]@{
-    ComputerName = "┌ BEGIN $Server Scan | Summary ┐"
-    DataCategory = 'Summary'
-    Name         = '┌ BEGIN HOST ┐'
-    Value        = "██ $Server ██ | Scan: $ScanPlan"
 }
 
+    # -------------------------
+    # WinRM Data Collection
+    # -------------------------
     try {
         $Result = Invoke-Command `
             -ComputerName $Server `
@@ -281,90 +331,108 @@ $ScanPlan =
             -ScriptBlock {
 
                 $Rows = @()
-                $LocalOpenPortCount = $null
                 $Computer = $env:COMPUTERNAME
+
+                $IISOut     = 'N/A'
+                $SQLOut     = 'N/A'
+                $LastUserOut = 'Unknown'
 
                 if ($using:chkOS.Checked) {
                     $OS = Get-CimInstance Win32_OperatingSystem
-                    $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='OS'; Name='Version'; Value=$OS.Caption }
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'OS'
+                        Name         = 'Version'
+                        Value        = $OS.Caption
+                    }
                 }
 
                 if ($using:chkSQL.Checked) {
-                    $Sql = Get-Service | Where-Object { $_.Name -like 'MSSQL*' -and $_.Name -ne 'MSSQLFDLauncher' }
-                    $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='SQL'; Name='Installed'; Value= if ($Sql){'Yes'}else{'No'} }
+                    $SqlServices = Get-Service |
+                        Where-Object { $_.Name -like 'MSSQL*' -and $_.Name -ne 'MSSQLFDLauncher' }
 
-                    foreach ($Svc in $Sql) {
-                        $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='SQL'; Name='Instance'; Value=$Svc.Name }
+                    $SQLOut = if ($SqlServices) { 'Enabled' } else { 'Absent' }
+
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'SQL'
+                        Name         = 'Installed'
+                        Value        = if ($SqlServices) { 'Yes' } else { 'No' }
                     }
                 }
 
                 if ($using:chkIIS.Checked) {
                     $IIS = Get-WindowsFeature Web-Server -ErrorAction SilentlyContinue
-                    $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='IIS'; Name='Installed'; Value= if ($IIS.InstallState -eq 'Installed'){'Yes'}else{'No'} }
-                }
+                    $IISOut = if ($IIS -and $IIS.InstallState -eq 'Installed') { 'Active' } else { 'Inactive' }
 
-                if ($using:chkUsers.Checked) {
-                    Get-ChildItem C:\Users -Directory |
-                        Where-Object { $_.Name -notin 'Public','Default','Default User','All Users','Administrator' } |
-                        ForEach-Object {
-                            $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='UserFolders'; Name='Folder'; Value=$_.Name }
-                        }
-                }
-
-                if ($using:chkTasks.Checked) {
-                    Get-ScheduledTask |
-                        Where-Object { $_.TaskPath -notlike '\Microsoft\*' -and $_.Principal.UserId } |
-                        ForEach-Object {
-                            $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='ScheduledTask'; Name=$_.TaskName; Value=$_.Principal.UserId }
-                        }
-                }
-
-                if ($using:DoPorts) {
-                    foreach ($port in 80,443,8443,8080,8000,25) {
-                        $open = Test-NetConnection -ComputerName $Computer -Port $port -InformationLevel Quiet
-                        if ($open) { $LocalOpenPortCount++ }
-                        $Rows += [pscustomobject]@{ ComputerName=$Computer; DataCategory='Network'; Name="Port $port"; Value= if ($open){'Open'}else{'Closed'} }
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'IIS'
+                        Name         = 'Installed'
+                        Value        = if ($IISOut -eq 'Active') { 'Yes' } else { 'No' }
                     }
                 }
 
-                return [pscustomobject]@{ Rows=$Rows; OpenPortCount=$LocalOpenPortCount }
+                if ($using:chkUsersGroups.Checked) {
+                    try {
+                        $Reg = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\LogonUI'
+                        if ($Reg.LastLoggedOnUser) {
+                            $LastUserOut = $Reg.LastLoggedOnUser
+                        }
+                    } catch {}
+
+                    $Rows += [pscustomobject]@{
+                        ComputerName = $Computer
+                        DataCategory = 'UsersAndGroups'
+                        Name         = 'Last Logged-On User'
+                        Value        = $LastUserOut
+                    }
+                }
+
+                return [pscustomobject]@{
+                    Rows     = $Rows
+                    IISState = $IISOut
+                    SQLState = $SQLOut
+                    LastUser = $LastUserOut
+                }
             }
 
-        $WinRMStatus = 'Success'
-       
-if ($DoPorts) {
-    $OpenPortCount = $Result.OpenPortCount
-}
+        $WinRMStatus     = 'Success'
+        $IISSummaryState = $Result.IISState
+        $SQLSummaryState = $Result.SQLState
+        $LastLoggedUser  = $Result.LastUser
 
         $Result.Rows
     }
     catch {
         $WinRMStatus = 'Failed'
+
         [pscustomobject]@{
             ComputerName = $Server
             DataCategory = 'ERROR'
-            Name = 'QueryFailed'
-            Value = $_.Exception.Message
+            Name         = 'QueryFailed'
+            Value        = $_.Exception.Message
         }
     }
 
-    # --- END HOST ---
+    # -------------------------
+    # END HOST — Result Summary
+    # -------------------------
+    $PortsSummary = if ($DoPorts) { "PortsOpen=$OpenPortCount" } else { "PortsOpen=Not Scanned" }
+
     [pscustomobject]@{
-        ComputerName = "└ END $Server Scan | Summary: ┘"
+        ComputerName = "└ $Server | End Scan Summary ┘"
         DataCategory = 'Summary'
-        Name = '└ END HOST ┘'
-        Value = "██ $Server ██ | PortsOpen=$OpenPortCount | WinRM=$WinRMStatus"
+        Name         = '└ END HOST ┘'
+        Value        = "██ $Server ██ | State=$OnlineState | IIS=$IISSummaryState | SQL=$SQLSummaryState | LastUser=$LastLoggedUser | $PortsSummary | WinRM=$WinRMStatus"
     }
 }
 
-
+# ---------- Write CSV ----------
 $Desktop = [Environment]::GetFolderPath('Desktop')
 $AllResults | Export-Csv (
     Join-Path $Desktop "ServerInventory_$(Get-Date -Format yyyyMMdd_HHmmss).csv"
 ) -NoTypeInformation
 
-
 # ---------- Output ----------
-if ($AllResults) {
-    $AllResults | Out-GridView -Title 'Server Discovery Inventory'
-}
+$AllResults | Out-GridView -Title 'Server Discovery Inventory'
