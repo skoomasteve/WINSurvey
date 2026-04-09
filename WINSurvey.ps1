@@ -1,4 +1,4 @@
-
+# SS-2026  |  MIT License
 
 # Load assemblies
 Add-Type -AssemblyName System.Windows.Forms
