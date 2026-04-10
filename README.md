@@ -1,6 +1,6 @@
 # WINSurvey
 ## A simple PowerShell-based Windows inventory and survey tool with UI
-WINSurvey is useful for domain environment intelligence or pre-OS-upgrade reconnaissance.  The tool scans domain-joined machines and lists informative datapoints which could help identify their use case, common users, and upgradability. Non-domain/Windows machines can also be scanned for open ports or ICMP availability, however,  the tool is especially useful for Windows instances with winrm-enabled.
+WINSurvey is useful for domain environment intelligence or pre-OS-upgrade reconnaissance.  The tool scans domain-joined machines and lists informative datapoints which could help identify their use case, common users, and upgradability. Non-domain/Windows machines can also be scanned for open ports or ICMP availability, however,  the tool is especially useful for Windows instances with Winrm enabled.
 
 ## Use
 
